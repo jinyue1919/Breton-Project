@@ -45,7 +45,7 @@ C_A = 7.93  # Air area
 C_d = 0.45  # Air resistance coefficient
 rot_coef = 1.16  # Correction coefficient of rotating mass
 gears = np.array([15.49, 12.07, 8.35, 5.67, 4.07, 2.96, 2.05, 1.39, 1.00])
-Reg_rate = 0.1  #  Regeneration coefficient
+Reg_rate = 0.3  #  Regeneration coefficient
 transmission_speed_max = 2600 * (2 * np.pi / 60) # rpm
 transmission_torque_max = 1800  # Nm
 # gears_in_use = np.array([12.07, 8.35, 4.07, 1.39])  # 4 constantly used gears
@@ -116,7 +116,7 @@ def distance_calc(vel_current, vel_next):
     vel_mean = (vel_current + vel_next)/2
     return  vel_mean
 
-def energy_and_motor_eff_calc(vel_seq, gear_seq, Reg_rate=0.1, per_meter=True):  # vel_seq: ndarray; unit: m/s^2
+def energy_and_motor_eff_calc(vel_seq, gear_seq, Reg_rate=Reg_rate, per_meter=True):  # vel_seq: ndarray; unit: m/s^2
 	'''
 	Calculate one or multi-step energy, motor efficiency and torque
 	'''
@@ -201,7 +201,7 @@ def energy_and_motor_eff_calc(vel_seq, gear_seq, Reg_rate=0.1, per_meter=True): 
 			torque_seq[i] = torque
 	return energy, torque_seq, motor_eff_seq, flag
 
-def check_vel_tm_consistence(vel_seq, gear_opt, Tm_seq, Reg_rate=0.1):
+def check_vel_tm_consistence(vel_seq, gear_opt, Tm_seq, Reg_rate=Reg_rate):
 	vel_seq /= 3.6  # m/s
 	flag = np.zeros(len(Tm_seq))
 	for i in range(vel_seq.size-1):

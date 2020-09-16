@@ -40,7 +40,7 @@ with open('preprocessing_data.pickle','rb') as f:
 # objective function
 def energy(x):
     ''' energy consumption in 10 steps '''
-    return sum(m * rot_coef * (x[1:] - x[:-1]) + F_a_const * 0.25 * (x[:-1] + x[1:]) ** 2)
+    return sum(m * rot_coef * (x[1:] - x[:-1]) + F_a_const * 0.25 * (x[:-1] + x[1:]) ** 2) + energy_const
 
 # derivate objective function
 def energy_der(x):
@@ -63,6 +63,7 @@ ineq_cons = {'type': 'ineq',
                                          x[8] - x[7] + 2.5,
                                          x[9] - x[8] + 2.5,
                                          x[10] - x[9] + 2.5,
+                                         x[10] / v_end - 0.95, 
                                          1.5 - x[1] + x[0],
                                          1.5 - x[2] + x[1],
                                          1.5 - x[3] + x[2],
@@ -73,6 +74,7 @@ ineq_cons = {'type': 'ineq',
                                          1.5 - x[8] + x[7],
                                          1.5 - x[9] + x[8],
                                          1.5 - x[10] + x[9],
+                                         1.05 - x[10] / v_end,
                                          1.05 - sum((x[1:] + x[:-1])/2) / s_ori,
                                          sum((x[1:] + x[:-1])/2) / s_ori - 0.95]),
              'jac' : lambda x: np.array([[-1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -85,6 +87,7 @@ ineq_cons = {'type': 'ineq',
                                         [0, 0, 0, 0, 0, 0, 0, -1, 1, 0, 0],
                                         [0, 0, 0, 0, 0, 0, 0, 0, -1, 1, 0],
                                         [0, 0, 0, 0, 0, 0, 0, 0, 0, -1, 1],
+                                        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1/v_end],
                                         [1, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
                                         [0, 1, -1, 0, 0, 0, 0, 0, 0, 0, 0],
                                         [0, 0, 1, -1, 0, 0, 0, 0, 0, 0, 0],
@@ -95,11 +98,12 @@ ineq_cons = {'type': 'ineq',
                                         [0, 0, 0, 0, 0, 0, 0, 1, -1, 0, 0],
                                         [0, 0, 0, 0, 0, 0, 0, 0, 1, -1, 0],
                                         [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, -1],
+                                        [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, -1/v_end],
                                         [-x / s_ori for x in [0.5, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0.5]],
                                         [x / s_ori for x in [0.5, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0.5]]])}
 
 eq_cons = {'type': 'eq',
-            'fun': lambda x: np.array([x[0] - c]),
+            'fun': lambda x: np.array([x[0] - v_begin]),
             'jac': lambda x: np.array([1,0,0,0,0,0,0,0,0,0,0])}
      
 res_rec = []
@@ -107,7 +111,8 @@ res_rec = []
 for i in range(len(v_test)):
     s_ori = distance[i]
     x0 = np.array(v_test[i]) 
-    c = x0[0]
+    v_begin = x0[0]
+    v_end = x0[-1]
     res = minimize(energy, x0, method='SLSQP', jac=energy_der,
                 constraints=[ineq_cons, eq_cons], options={'ftol': 1e-2, 'disp': True},
                 bounds=bounds)

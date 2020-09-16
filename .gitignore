@@ -6,7 +6,8 @@
 
 # Data
 Data
-.pickle
+*.pickle
+*.png
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -9,7 +9,7 @@ import pickle
 from fuzzy_w_modify import *
 import math
 import pdb
-
+# 1.去掉车速轨迹优化 2.加v2，3.放宽里程的限制。(挡位，轮边扭矩，电机效率，车速，权重，权重变化，电机扭矩。能耗)4.
 #%% utility functions
 def find(list, value):
 	return [i for i, x in enumerate(list) if x == value]
@@ -66,6 +66,13 @@ sorted_indexes = sorted(valid_indexes, key=lambda x: x.size, reverse=True)
 #%%
 # for idx in range(len(sorted_indexes)):
 # 	if sorted_indexes[idx].size > 10 * 60 * 5:  # 10 mins
+# results_1_noW = {}
+# for q in [0,1,2,3]:
+# 	q = str(q)
+# 	string = 'v2_idx' + q
+# 	results_1_noW[string] = {}
+# 	q = int(q)
+
 idx = 0  # the longest
 V = velocity[sorted_indexes[idx]]
 A = acc[sorted_indexes[idx]]
@@ -117,41 +124,37 @@ opt_results_v1['if_opt'] = []
 opt_results_v1['abnormal_vel'] = []
 opt_results_v1['Tm_wheel_diff_opt'] = []
 opt_results_v1['vel_mean'] = []
-
+opt_results_v1['vel_dmd'] = []
 opt_results_v1['vel_ctl'] = []
 opt_results_v1['torque_ctl'] = []
 opt_results_v1['motor_eff_ctl'] = []
+opt_results_v1['motor_eff_dmd'] = []
 opt_results_v1['gear_ctl'] = []
 opt_results_v1['energy_ctl'] = []
+opt_results_v1['torque_wheel_ctl'] = []
+opt_results_v1['torque_wheel_dmd'] = []
+opt_results_v1['torque_wheel_opt'] = []
 opt_results_v1['Tm_wheel_diff_ctl'] = []
+opt_results_v1['energy_dmd'] = []
+opt_results_v1['torque_dmd'] = []
+opt_results_v1['w1'] = []
+opt_results_v1['W1'] = []
+
+opt_results_v1['motor_speed_dmd'] = []
+opt_results_v1['motor_speed_ctl'] = []
 
 # 0: abnormal, acc pedal > 0, brake pedal > 0
 # 1: drive, acc pedal > 0, brake pedal = 0
 # 2: slide: acc pedal = 0, brake pedal = 0
 # 3: brake: acc pedal = 0, brake pedal > 0
 opt_results_v1['drive_mode'] = []
+opt_results_v1['flag_torque_dmd'] = []
+opt_results_v1['flag_torque_ctl'] = []
+opt_results_v1['flag_torque_opt'] = []
 
-# # optimize acceleration route
-# opt_results_v2 = {}
-# opt_results_v2['vel'] = [] 
-# opt_results_v2['torque'] = []  
-# opt_results_v2['gear'] = []
-# opt_results_v2['motor_eff'] = []
-# opt_results_v2['flag'] = []
-# opt_results_v2['mean_vel_past'] = []
-# opt_results_v2['mean_vel_pred'] = []
-# opt_results_v2['mean_vel_real'] = []
-# opt_results_v2['mean_vel_opt'] = []
-# opt_results_v2['invalid_indexes'] = []
-# opt_results_v2['energy'] = []
-# opt_results_v2['drive_mode'] = []
-# opt_results_v2['vel_real'] = []
-# opt_results_v2['vel_pred'] = []
-# opt_results_v2['vel_min'] = []
-# opt_results_v2['vel_max'] = []
-# opt_results_v2['if_opt'] = []
-# opt_results_v2['abnormal_vel'] = []
-# opt_results_v2['Tm_wheel_diff'] = []
+opt_results_v1['flag_motor_speed_dmd'] = []
+opt_results_v1['flag_motor_speed_ctl'] = []
+opt_results_v1['flag_motor_speed_opt'] = []
 
 vel_only = True
 if vel_only == True:
@@ -184,7 +187,7 @@ for i in progressbar.progressbar(range(n_steps_in, v.size - n_steps_out)):
 		vel_next = v[i]
 		gear_next = gears_in_use[int(g[i] - 1)]
 
-		torque_wheel = torque_wheel_calc(vel_current / 3.6 ,vel_next / 3.6, gear_next)	
+		torque_wheel = torque_I_calc(vel_current / 3.6 ,vel_next / 3.6, gear_next)	
 
 		if vel_only == True:
 			vel_seq = data[i - n_steps_in:i + n_steps_out].copy()  # use copy of data to avoid changes
@@ -198,7 +201,7 @@ for i in progressbar.progressbar(range(n_steps_in, v.size - n_steps_out)):
 		gear_ctl = gear_next  # last step 
 		gear_next = gears_in_use[int(g[i] - 1)]
 		
-		torque_wheel = torque_wheel_calc(vel_current / 3.6 ,vel_next / 3.6, gear_next)	
+		torque_wheel = torque_I_calc(vel_current / 3.6 ,vel_next / 3.6, gear_next)	
 
 		if vel_only == True:
 			vel_seq = data[i - n_steps_in:i + n_steps_out].copy()
@@ -206,7 +209,7 @@ for i in progressbar.progressbar(range(n_steps_in, v.size - n_steps_out)):
 		else:
 			vel_seq = data[0, i - n_steps_in:i + n_steps_out].copy()
 			vel_seq[0, n_steps_in-1] = vel_current
-  
+
 	# optimization module is activated only when the car is in drive mode
 	if torque_wheel >= 0:
 		# the past {n_steps_in} seconds of velocity should all > 0
@@ -269,26 +272,45 @@ for i in progressbar.progressbar(range(n_steps_in, v.size - n_steps_out)):
 				opt_results_v1['vel_max'].append(-1)
 				opt_results_v1['energy_opt'].append(-1)
 				opt_results_v1['Tm_wheel_diff_opt'].append(-1)
-
+				opt_results_v1['flag_motor_speed_opt'].append(-1)
+				opt_results_v1['flag_torque_opt'].append(-1)
 				#TODO gear_next ??
 				# select a gear with the smallest energy 
-				energy, torque_seq, motor_eff_seq, _ = energy_and_motor_eff_calc(np.array([vel_current, vel_next])/3.6, np.array([gear_next]), per_meter=False)
+				energy, torque_seq, motor_eff_seq, flag_motor_speed, flag_torque, motor_speed = energy_and_motor_eff_calc(np.array([vel_current, vel_next])/3.6, np.array([gear_next]), per_meter=False)
 				
+				opt_results_v1['energy_dmd'].append(energy)
 				opt_results_v1['energy_ctl'].append(energy)
 				opt_results_v1['if_opt'].append(0)
 				opt_results_v1['Tm_wheel_diff_ctl'].append(0)
 				opt_results_v1['vel_mean'].append(vel_mean)
 				opt_results_v1['vel_ctl'].append(vel_next)
+				opt_results_v1['vel_dmd'].append(v[i])
 				opt_results_v1['torque_ctl'].append(torque_seq[0])
-				opt_results_v1['gear_ctl'].append(gear_next)
+				opt_results_v1['gear_ctl'].append(g[i])
 				opt_results_v1['motor_eff_ctl'].append(motor_eff_seq[0])
+				opt_results_v1['motor_eff_dmd'].append(motor_eff_seq[0])
+				opt_results_v1['torque_dmd'].append(torque_seq[0])
+				opt_results_v1['torque_wheel_opt'].append(-1)
+				opt_results_v1['torque_wheel_dmd'].append(torque_seq[0] * gear_next * i0 * eff_diff * eff_cpling)
+				opt_results_v1['torque_wheel_ctl'].append(torque_seq[0] * gear_next * i0 * eff_diff * eff_cpling)
+				opt_results_v1['flag_motor_speed_ctl'].append(flag_motor_speed)
+				opt_results_v1['flag_torque_ctl'].append(flag_torque)
+				opt_results_v1['flag_motor_speed_dmd'].append(flag_motor_speed)
+				opt_results_v1['flag_torque_dmd'].append(flag_torque)
+				opt_results_v1['motor_speed_dmd'].append(motor_speed)
+				opt_results_v1['motor_speed_ctl'].append(motor_speed)
+
+
+				# opt_results_v1['W1'].append(0)
+				# opt_results_v1['w1'].append(0)
+
 				print(f'step {i - 15}: Invalid velocity prediction')
 			else:
 				
-				if vel_mor_flag == 1 :
-					vel_pred = np.expand_dims(np.hstack([np.linspace(vel_pred.squeeze(0)[0], vel_pred.squeeze(0)[6]*1.1, num=7),vel_pred.squeeze(0)[7:10] * 1.1]),axis=0)
-				elif vel_mor_flag == -1 :
-					vel_pred = np.expand_dims(np.hstack([np.linspace(vel_pred.squeeze(0)[0], vel_pred.squeeze(0)[6]*0.9, num=7),vel_pred.squeeze(0)[7:10] * 0.9]),axis=0)
+				# if vel_mor_flag == 1 :
+				# 	vel_pred = np.expand_dims(np.hstack([np.linspace(vel_pred.squeeze(0)[0], vel_pred.squeeze(0)[6]*1.1, num=7),vel_pred.squeeze(0)[7:10] * 1.1]),axis=0)
+				# elif vel_mor_flag == -1 :
+				# 	vel_pred = np.expand_dims(np.hstack([np.linspace(vel_pred.squeeze(0)[0], vel_pred.squeeze(0)[6]*0.9, num=7),vel_pred.squeeze(0)[7:10] * 0.9]),axis=0)
 				
 				if i == n_steps_in:	
 					(flag, Tm_opt, vel_opt, vel_min, vel_max, vel_pred_r, gear_opt, motor_eff_opt, JcostMin, sys_mode_opt) = energy_opt_v1(gears_in_use, gear_next, vel_current=vel_current / 3.6, vel_pred=vel_pred.squeeze(0) / 3.6, vel_num_per_second=10, gearOpt=True)
@@ -299,10 +321,16 @@ for i in progressbar.progressbar(range(n_steps_in, v.size - n_steps_out)):
 				if flag == 1:
 					gear_ctl = gear_opt[0]
 					gear_next = gear_ctl
-					_, torque_seq_ori, _, _ = energy_and_motor_eff_calc(np.array([vel_current/3.6, vel_next/3.6]), np.array([gear_ctl]), per_meter=False)
+					energy_dmd, torque_seq_ori, motor_eff_seq_dmd, flag_motor_speed_dmd, flag_torque_dmd, motor_speed_dmd = energy_and_motor_eff_calc(np.array([vel_current/3.6, vel_next/3.6]), np.array([gear_ctl]), per_meter=False)
 					torque_ori = torque_seq_ori[0]
 
+					# if abs(torque_ori - Tm_opt[0]) > 800:
+					# 	torque_ctl = torque_ori
+					# else:
+					# 	torque_ctl = Tm_opt[0]
 					torque_ctl = W1 * Tm_opt[0] + (1-W1) * torque_ori
+
+
 					vel_ctl = vel_calc(torque_ctl, vel_current / 3.6, gear_ctl) * 3.6
 
 					torque_ori_list.append(torque_ori)
@@ -312,14 +340,11 @@ for i in progressbar.progressbar(range(n_steps_in, v.size - n_steps_out)):
 						_, torque_ctl_b, _ = torque_calc(vel_current / 3.6, v[i-2]/ 3.6, gears_in_use[int(g[13] - 1)]) #14s的车速，15s的车速，14s的挡位
 						_, torque_ori_b, _ = torque_calc(vel_current / 3.6, v[i-2] / 3.6, gears_in_use[int(g[13] - 1)])#gears_in_use[int(g[i] - 1)]
 						T = torque_ctl - torque_ori
-						delta_T_delta = (torque_ctl - torque_ctl_b) - (torque_ori - torque_ori_b)
 						
 					else:
 						T = torque_ctl_list[-1] - torque_ori_list[-1]
-						delta_T_delta = (torque_ctl_list[-1] - torque_ctl_list[-2]) - (torque_ori_list[-1] - torque_ori_list[-2])
 					# 权重在线调节
-					a_intension = 0.4
-					w1 = w_modify(T,delta_T_delta,a_intension)
+					w1 = w_modify(T)
 					w1_list.append(w1)
 					W1 = W1 * w1
 					if W1 > 1:
@@ -357,11 +382,11 @@ for i in progressbar.progressbar(range(n_steps_in, v.size - n_steps_out)):
 					data_history = np.hstack([data_history[1:], [vel_next]])
 
 					vel_mean = distance_calc(vel_current/3.6, vel_next/3.6)
-					energy, torque_seq, motor_eff_seq, _ = energy_and_motor_eff_calc(np.array( [vel_current, vel_opt[1]])/3.6, gear_opt[:1], per_meter=False)
+					energy, torque_seq, motor_eff_seq, flag_motor_speed, flag_torque, motor_speed = energy_and_motor_eff_calc(np.array([vel_current, vel_opt[1]])/3.6, gear_opt[:1], per_meter=False)
 					opt_results_v1['flag'].append(flag)
 					opt_results_v1['vel_opt'].append(vel_opt[1:])
 					opt_results_v1['torque_opt'].append(Tm_opt)
-					opt_results_v1['gear_opt'].append(gear_opt)
+					opt_results_v1['gear_opt'].append((np.where(gears_in_use == gear_ctl)[0])[0])
 					opt_results_v1['motor_eff_opt'].append(motor_eff_seq[0])
 					opt_results_v1['mean_vel_past'].append(vel_history.mean() * 85)
 					opt_results_v1['mean_vel_pred'].append(vel_pred.mean())
@@ -373,18 +398,37 @@ for i in progressbar.progressbar(range(n_steps_in, v.size - n_steps_out)):
 					opt_results_v1['vel_max'].append(vel_max)
 					opt_results_v1['energy_opt'].append(energy)
 					opt_results_v1['Tm_wheel_diff_opt'].append((torque_ori * gear_next - Tm_opt[0] * gear_opt[0])* i0 * eff_diff * eff_cpling)
-					
+					opt_results_v1['flag_motor_speed_opt'].append(flag_motor_speed)
+					opt_results_v1['flag_torque_opt'].append(flag_torque)
+
 					opt_results_v1['vel_ctl'].append(vel_ctl)
+					opt_results_v1['vel_dmd'].append(v[i])
 					opt_results_v1['torque_ctl'].append(torque_ctl)
-					opt_results_v1['gear_ctl'].append(gear_next)
-					energy, torque_seq, motor_eff_seq, _ = energy_and_motor_eff_calc(np.array([vel_current, vel_ctl])/3.6, np.array([gear_ctl]), per_meter=False)
+					opt_results_v1['torque_dmd'].append(torque_ori)
+					opt_results_v1['gear_ctl'].append((np.where(gears_in_use == gear_ctl)[0])[0]+1)
+					energy, torque_seq, motor_eff_seq, flag_motor_speed, flag_torque, motor_speed = energy_and_motor_eff_calc(np.array([vel_current, vel_ctl])/3.6, np.array([gear_ctl]), per_meter=False)
 					opt_results_v1['motor_eff_ctl'].append(motor_eff_seq[0])
 					opt_results_v1['energy_ctl'].append(energy)
-					
+					opt_results_v1['energy_dmd'].append(energy_dmd)
+					opt_results_v1['flag_motor_speed_dmd'].append(flag_motor_speed_dmd)
+					opt_results_v1['flag_torque_dmd'].append(flag_torque_dmd)
+					opt_results_v1['flag_motor_speed_ctl'].append(flag_motor_speed)
+					opt_results_v1['flag_torque_ctl'].append(flag_torque)
+					opt_results_v1['motor_eff_dmd'].append(motor_eff_seq_dmd[0])
+					opt_results_v1['motor_speed_dmd'].append(motor_speed_dmd)
+					opt_results_v1['motor_speed_ctl'].append(motor_speed)
+
+
 					#TODO calc Tm_wheel_diff_ctl
 					opt_results_v1['Tm_wheel_diff_ctl'].append((torque_ori * gear_next - torque_ctl * gear_ctl)* i0 * eff_diff * eff_cpling)
 					opt_results_v1['vel_mean'].append(vel_mean)
 				
+					opt_results_v1['torque_wheel_opt'].append(Tm_opt[0] * gear_opt[0] * i0 * eff_diff * eff_cpling)
+					opt_results_v1['torque_wheel_dmd'].append(torque_ori * gear_next * i0 * eff_diff * eff_cpling)
+					opt_results_v1['torque_wheel_ctl'].append(torque_ctl * gear_next * i0 * eff_diff * eff_cpling)
+					opt_results_v1['W1'].append(W1)
+					opt_results_v1['w1'].append(w1)
+
 				elif flag == 0:
 					print(f'step {i - 15}: Invalid dp calculation')
 
@@ -397,31 +441,52 @@ for i in progressbar.progressbar(range(n_steps_in, v.size - n_steps_out)):
 					# torque_ctl = torque_ori
 					vel_ctl = vel_next
 					vel_mean = distance_calc(vel_current/3.6, vel_next/3.6)
-					energy, torque_seq, motor_eff_seq, _ = energy_and_motor_eff_calc( np.array([vel_current, vel_opt[1]])/3.6, gear_opt[:1], per_meter=False)
+					energy, torque_seq, motor_eff_seq, flag_motor_speed, flag_torque, motor_speed = energy_and_motor_eff_calc( np.array([vel_current, vel_opt[1]])/3.6, gear_opt[:1], per_meter=False)
 					opt_results_v1['flag'].append(flag)
-					opt_results_v1['vel_opt'].append(vel_opt[1:])
-					opt_results_v1['torque_opt'].append(Tm_opt)
-					opt_results_v1['gear_opt'].append(gear_opt)
-					opt_results_v1['motor_eff_opt'].append(motor_eff_seq[0])
+					opt_results_v1['vel_opt'].append(-1)
+					opt_results_v1['torque_opt'].append(-1)
+					opt_results_v1['gear_opt'].append(-1)
+					opt_results_v1['motor_eff_opt'].append(-1)
 					opt_results_v1['mean_vel_past'].append(vel_history.mean() * 85)
 					opt_results_v1['mean_vel_pred'].append(vel_pred.mean())
 					opt_results_v1['mean_vel_real'].append(vel_real.mean())
-					opt_results_v1['mean_vel_opt'].append(vel_opt[1:].mean())
+					opt_results_v1['mean_vel_opt'].append(-1)
 					opt_results_v1['vel_real'].append(vel_real)
 					opt_results_v1['vel_pred'].append(vel_pred)
 					opt_results_v1['vel_min'].append(vel_min)
 					opt_results_v1['vel_max'].append(vel_max)
-					opt_results_v1['energy_opt'].append(energy)
-					opt_results_v1['Tm_wheel_diff_opt'].append((torque_ori * gear_next - Tm_opt[0] * gear_opt[0])* i0 * eff_diff * eff_cpling)
+					opt_results_v1['energy_opt'].append(-1)
+					opt_results_v1['Tm_wheel_diff_opt'].append(-1)
+					opt_results_v1['flag_motor_speed_opt'].append(-1)
+					opt_results_v1['flag_torque_opt'].append(-1)
 					
 					opt_results_v1['vel_ctl'].append(vel_ctl)
+					opt_results_v1['vel_dmd'].append(v[i])
 					opt_results_v1['torque_ctl'].append(torque_seq[0])
-					opt_results_v1['gear_ctl'].append(gear_next)
-					energy, torque_seq, motor_eff_seq, _ = energy_and_motor_eff_calc(np.array([vel_current, vel_ctl])/3.6, np.array([gear_next]), per_meter=False)
+					opt_results_v1['torque_dmd'].append(torque_seq[0])
+					opt_results_v1['gear_ctl'].append(g[i])
+					energy, torque_seq, motor_eff_seq, flag_motor_speed, flag_torque, motor_speed = energy_and_motor_eff_calc(np.array([vel_current, vel_ctl])/3.6, np.array([gear_next]), per_meter=False)
 					opt_results_v1['motor_eff_ctl'].append(motor_eff_seq[0])
+					opt_results_v1['motor_eff_dmd'].append(motor_eff_seq[0])
 					opt_results_v1['energy_ctl'].append(energy)
+					opt_results_v1['energy_dmd'].append(energy)					
 					opt_results_v1['Tm_wheel_diff_ctl'].append(0)
 					opt_results_v1['vel_mean'].append(vel_mean)
+					opt_results_v1['flag_motor_speed_ctl'].append(flag_motor_speed)
+					opt_results_v1['flag_torque_ctl'].append(flag_torque)
+					opt_results_v1['flag_motor_speed_dmd'].append(flag_motor_speed)
+					opt_results_v1['flag_torque_dmd'].append(flag_torque)
+					opt_results_v1['motor_speed_dmd'].append(motor_speed)
+					opt_results_v1['motor_speed_ctl'].append(motor_speed)
+
+
+
+					opt_results_v1['torque_wheel_opt'].append(-1)
+					opt_results_v1['torque_wheel_dmd'].append(torque_seq[0] * gear_next * i0 * eff_diff * eff_cpling)
+					opt_results_v1['torque_wheel_ctl'].append(torque_seq[0] * gear_next * i0 * eff_diff * eff_cpling)
+					
+					opt_results_v1['W1'].append(0)
+					opt_results_v1['w1'].append(0)
 
 		# the past {n_steps_in} seconds of velocity exists 0
 		else:
@@ -434,34 +499,54 @@ for i in progressbar.progressbar(range(n_steps_in, v.size - n_steps_out)):
 			gear_next = gear_ctl
 
 			vel_mean = distance_calc(vel_current/3.6, vel_next/3.6)
-			energy, torque_seq, motor_eff_seq, _ = energy_and_motor_eff_calc(np.array([vel_current, vel_next])/3.6, np.array([gear_next]), per_meter=False)
+			energy, torque_seq, motor_eff_seq, flag_motor_speed, flag_torque, motor_speed = energy_and_motor_eff_calc(np.array([vel_current, vel_next])/3.6, np.array([gear_next]), per_meter=False)
 			opt_results_v1['invalid_indexes'].append(i)
 			opt_results_v1['flag'].append(2)
-			opt_results_v1['vel_opt'].append(v[i])
-			opt_results_v1['gear_opt'].append(g[i])
-			opt_results_v1['torque_opt'].append(torque_seq[0])
-			opt_results_v1['motor_eff_opt'].append(motor_eff_seq[0])
-			opt_results_v1['mean_vel_past'].append(vel_history.mean() * 85)
-			opt_results_v1['mean_vel_pred'].append(vel_pred.mean())
-			opt_results_v1['mean_vel_real'].append(vel_real.mean())	
-			opt_results_v1['mean_vel_opt'].append(vel_opt[1:].mean())
-			opt_results_v1['vel_real'].append(vel_real)
-			opt_results_v1['vel_pred'].append(vel_pred)
-			opt_results_v1['vel_min'].append(vel_min)
-			opt_results_v1['vel_max'].append(vel_max)
-			opt_results_v1['energy_opt'].append(energy)
+			opt_results_v1['vel_opt'].append(-1)
+			opt_results_v1['gear_opt'].append(-1)
+			opt_results_v1['torque_opt'].append(-1)
+			opt_results_v1['motor_eff_opt'].append(-1)
+			opt_results_v1['mean_vel_past'].append(-1)
+			opt_results_v1['mean_vel_pred'].append(-1)
+			opt_results_v1['mean_vel_real'].append(-1)	
+			opt_results_v1['mean_vel_opt'].append(-1)
+			opt_results_v1['vel_real'].append(-1)
+			opt_results_v1['vel_pred'].append(-1)
+			opt_results_v1['vel_min'].append(-1)
+			opt_results_v1['vel_max'].append(-1)
+			opt_results_v1['energy_opt'].append(-1)
+			opt_results_v1['energy_dmd'].append(energy)
 			opt_results_v1['if_opt'].append(0)
 			opt_results_v1['Tm_wheel_diff_opt'].append(0)
 			opt_results_v1['vel_mean'].append(vel_mean)
+			opt_results_v1['flag_motor_speed_opt'].append(-1)
+			opt_results_v1['flag_torque_opt'].append(-1)
 
 			opt_results_v1['vel_ctl'].append(vel_next)
-			energy, torque_seq, motor_eff_seq, _ = energy_and_motor_eff_calc(np.array([vel_current, vel_next])/3.6, np.array([gear_next]), per_meter=False)
+			opt_results_v1['vel_dmd'].append(v[i])
+			energy, torque_seq, motor_eff_seq, flag_motor_speed, flag_torque, motor_speed = energy_and_motor_eff_calc(np.array([vel_current, vel_next])/3.6, np.array([gear_next]), per_meter=False)
 			opt_results_v1['torque_ctl'].append(torque_seq[0])
-			opt_results_v1['gear_ctl'].append(gear_next)			 
+			opt_results_v1['torque_dmd'].append(torque_seq[0])
+			opt_results_v1['gear_ctl'].append(g[i])			 
 			opt_results_v1['motor_eff_ctl'].append(motor_eff_seq[0])
+			opt_results_v1['motor_eff_dmd'].append(motor_eff_seq[0])
 			opt_results_v1['energy_ctl'].append(energy)
 			opt_results_v1['Tm_wheel_diff_ctl'].append(0)
-	
+			opt_results_v1['flag_motor_speed_ctl'].append(flag_motor_speed)
+			opt_results_v1['flag_motor_speed_dmd'].append(flag_motor_speed)
+			opt_results_v1['flag_torque_ctl'].append(flag_torque)
+			opt_results_v1['flag_torque_dmd'].append(flag_torque)
+			opt_results_v1['motor_speed_dmd'].append(motor_speed)
+			opt_results_v1['motor_speed_ctl'].append(motor_speed)
+
+
+			opt_results_v1['torque_wheel_opt'].append(-1)
+			opt_results_v1['torque_wheel_dmd'].append(torque_seq[0] * gear_next * i0 * eff_diff * eff_cpling)
+			opt_results_v1['torque_wheel_ctl'].append(torque_seq[0] * gear_next * i0 * eff_diff * eff_cpling)
+
+			opt_results_v1['W1'].append(0)
+			opt_results_v1['w1'].append(0)
+
 	else:
 		print(f'step {i - 15}: does not enter optimization module\n')
 		# update data_history
@@ -471,32 +556,53 @@ for i in progressbar.progressbar(range(n_steps_in, v.size - n_steps_out)):
 		gear_next = gear_ctl
 
 		vel_mean = distance_calc(vel_current/3.6, vel_next/3.6)
-		energy, torque_seq, motor_eff_seq, _ = energy_and_motor_eff_calc(np.array([vel_current, vel_next])/3.6, np.array([gear_next]), per_meter=False)
+		energy, torque_seq, motor_eff_seq, flag_motor_speed, flag_torque, motor_speed = energy_and_motor_eff_calc(np.array([vel_current, vel_next])/3.6, np.array([gear_next]), per_meter=False)
 		opt_results_v1['flag'].append(3)
-		opt_results_v1['vel_opt'].append(v[i])
-		opt_results_v1['gear_opt'].append(g[i])
-		opt_results_v1['motor_eff_opt'].append(motor_eff_seq[0])
-		opt_results_v1['mean_vel_past'].append(vel_history.mean() * 85)
-		opt_results_v1['mean_vel_pred'].append(vel_pred.mean())
-		opt_results_v1['mean_vel_real'].append(vel_real.mean())
-		opt_results_v1['mean_vel_opt'].append(vel_opt[1:].mean())
-		opt_results_v1['vel_real'].append(vel_real)
-		opt_results_v1['vel_pred'].append(vel_pred)
-		opt_results_v1['vel_min'].append(vel_min)
-		opt_results_v1['vel_max'].append(vel_max)
-		opt_results_v1['energy_opt'].append(energy)
-		opt_results_v1['torque_opt'].append(torque_seq[0])
+		opt_results_v1['flag_motor_speed_opt'].append(-1)
+		opt_results_v1['flag_torque_opt'].append(-1)
+		opt_results_v1['vel_opt'].append(-1)
+		opt_results_v1['gear_opt'].append(-1)
+		opt_results_v1['motor_eff_opt'].append(-1)
+		opt_results_v1['mean_vel_past'].append(-1)
+		opt_results_v1['mean_vel_pred'].append(-1)
+		opt_results_v1['mean_vel_real'].append(-1)
+		opt_results_v1['mean_vel_opt'].append(-1)
+		opt_results_v1['vel_real'].append(-1)
+		opt_results_v1['vel_pred'].append(-1)
+		opt_results_v1['vel_min'].append(-1)
+		opt_results_v1['vel_max'].append(-1)
+		opt_results_v1['energy_opt'].append(-1)
+		opt_results_v1['torque_opt'].append(-1)
 		opt_results_v1['if_opt'].append(0)
 		opt_results_v1['Tm_wheel_diff_opt'].append(0)
 		opt_results_v1['vel_mean'].append(vel_mean)
+		opt_results_v1['torque_wheel_opt'].append(-1)
+		opt_results_v1['torque_wheel_dmd'].append(torque_seq[0] * gear_next * i0 * eff_diff * eff_cpling)
+
+		opt_results_v1['W1'].append(0)
+		opt_results_v1['w1'].append(0)
+
 
 		opt_results_v1['vel_ctl'].append(v[i])
-		opt_results_v1['gear_ctl'].append(gear_next)			 
-		energy, torque_seq, motor_eff_seq, _ = energy_and_motor_eff_calc(np.array([vel_current, vel_next])/3.6, np.array([gear_next]), per_meter=False)
+		opt_results_v1['vel_dmd'].append(v[i])
+		opt_results_v1['gear_ctl'].append(g[i])			 
+		energy, torque_seq, motor_eff_seq, flag_motor_speed, flag_torque, motor_speed = energy_and_motor_eff_calc(np.array([vel_current, vel_next])/3.6, np.array([gear_next]), per_meter=False)
 		opt_results_v1['motor_eff_ctl'].append(motor_eff_seq[0])
+		opt_results_v1['motor_eff_dmd'].append(motor_eff_seq[0])
+		opt_results_v1['flag_motor_speed_ctl'].append(flag_motor_speed)	
+		opt_results_v1['flag_motor_speed_dmd'].append(flag_motor_speed)
+		opt_results_v1['flag_torque_ctl'].append(flag_torque)
+		opt_results_v1['flag_torque_dmd'].append(flag_torque)		
 		opt_results_v1['torque_ctl'].append(torque_seq[0])
+		opt_results_v1['torque_dmd'].append(torque_seq[0])
 		opt_results_v1['energy_ctl'].append(energy)
+		opt_results_v1['energy_dmd'].append(energy)
 		opt_results_v1['Tm_wheel_diff_ctl'].append(0)
+		opt_results_v1['torque_wheel_ctl'].append(torque_seq[0] * gear_ctl * i0 * eff_diff * eff_cpling)
+		opt_results_v1['motor_speed_dmd'].append(motor_speed)
+		opt_results_v1['motor_speed_ctl'].append(motor_speed)
+		
+
 	# print(opt_results_v1['flag'][count])
 	
 opt_results_v1['energy_total_opt'] = sum(opt_results_v1['energy_opt']) / 3600 / 1000  # kw*h
@@ -506,8 +612,44 @@ opt_results_v1['single_gear_opt'] = [x[0] if isinstance(x, np.ndarray) else x fo
 opt_results_v1['single_motor_eff_opt'] = [x[0] if isinstance(x, np.ndarray) else x for x in opt_results_v1['motor_eff_opt']]
 
 opt_results_v1['energy_total_ctl'] = sum(opt_results_v1['energy_ctl']) / 3600 / 1000  # kw*h
-
+opt_results_v1['energy_total_dmd'] = sum(opt_results_v1['energy_dmd']) / 3600 / 1000  # kw*h
+opt_results_v1['distance'] = sum(opt_results_v1['vel_mean'])
+    
+	# results_1_noW[string] = opt_results_v1
 #%% calculate original total energy
+
+#%%
+# for idx in range(len(sorted_indexes)):
+# 	if sorted_indexes[idx].size > 10 * 60 * 5:  # 10 mins
+# results_ori_noW = {}
+# for q in [0,1,2,3]:
+# 	q = str(q)
+# 	string = 'v_idx' + q
+# 	results_ori_noW[string] = {}
+# 	q = int(q)
+
+	# idx = 0  # the longest
+	# V = velocity[sorted_indexes[idx]]
+	# A = acc[sorted_indexes[idx]]
+	# B = brake[sorted_indexes[idx]]
+	# G = gear[sorted_indexes[idx]]
+
+	# v = np.array([V[i:i + vel_count_per_second].mean() for i in range(0, V.size, vel_count_per_second) if i + vel_count_per_second <= V.size])
+
+	# # if an average is used, there may be cases where both the accelerator and brake are greater than 0
+	# a = np.array([A[i] for i in range(0, A.size, vel_count_per_second) if i + vel_count_per_second <= A.size])
+	# b = np.array([B[i] for i in range(0, B.size, vel_count_per_second) if i + vel_count_per_second <= B.size])
+	# g = np.array([G[i] for i in range(0, G.size, vel_count_per_second) if i + vel_count_per_second <= G.size])
+
+	# data = np.vstack((v, a)) 
+	# data = moving_average(data)  # (n_features, )
+	# v = moving_average(v)
+
+	# mode = 'min-max'
+	# assert data[0].shape == g.shape == b.shape == a.shape
+
+
+
 ori_results = {}
 ori_results['vel'] = []
 ori_results['gear'] = []
@@ -516,32 +658,31 @@ ori_results['energy'] = []
 ori_results['motor_eff'] = []
 ori_results['energy_total'] = 0
 ori_results['vel_mean'] = []
-
-
+ori_results['torque_wheel'] = []
 
 for i in progressbar.progressbar(range(n_steps_in, v.size - n_steps_out)):
 # for i in progressbar.progressbar(range(n_steps_in, n_steps_in+20)):
- 	vel_current = v[i - 1] / 3.6
- 	vel_next = v[i] / 3.6
- 	gear_next = gears_in_use[int(g[i] - 1)]
- 	(energy, motor_seq, motor_eff_seq, _) = energy_and_motor_eff_calc(v[i-1:i+1]/3.6, np.array([gear_next]), per_meter=False)
- 	vel_mean = (vel_next + vel_current) / 2
- 	ori_results['vel'].append(v[i])
- 	ori_results['gear'].append(g[i])
- 	ori_results['torque'].append(motor_seq[0])
- 	ori_results['energy'].append(energy)
- 	ori_results['motor_eff'].append(motor_eff_seq[0])
- 	ori_results['vel_mean'].append(vel_mean)
-
+	vel_current = v[i - 1] / 3.6
+	vel_next = v[i] / 3.6
+	gear_next = gears_in_use[int(g[i] - 1)]
+	(energy, motor_seq, motor_eff_seq, _,_,_) = energy_and_motor_eff_calc(v[i-1:i+1]/3.6, np.array([gear_next]), per_meter=False)
+	vel_mean = (vel_next + vel_current) / 2
+	ori_results['vel'].append(v[i])
+	ori_results['gear'].append(g[i])
+	ori_results['torque'].append(motor_seq[0])
+	ori_results['energy'].append(energy)
+	ori_results['torque_wheel'].append(motor_seq[0] * gear_next * i0 * eff_diff * eff_cpling)
+	ori_results['motor_eff'].append(motor_eff_seq[0])
+	ori_results['vel_mean'].append(vel_mean)
 ori_results['energy_total'] = sum(ori_results['energy']) / 3600 / 1000
 
 #%% distance
 ori_results['distance'] = sum(ori_results['vel_mean'])
-opt_results_v1['distance'] = sum(opt_results_v1['vel_mean'])
+# results_ori_noW[string] = ori_results
 
-# # %%
-# with open('opt_results.pickle', 'wb') as f:
-#  	pickle.dump([opt_results_v1, opt_results_v2, ori_results], f)
-
-
-
+# %%
+with open('opt_results_v1.pickle', 'wb') as f:
+ 	pickle.dump([opt_results_v1, ori_results],f)
+	 
+# with open('opt_results_v1.pickle','rb') as f:
+# 	[opt_results_v1,ori_results] = pickle.load(f)
