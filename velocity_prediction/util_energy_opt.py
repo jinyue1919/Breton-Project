@@ -60,33 +60,11 @@ def vel_preprocessing(vel_current, vel_pred, max_acc=2, max_dec=-2, t_delta=1):
 	return vel_pred
 
 def vel_calc(torque, vel_current, gear):
-	torque = np.array(torque)
-	acc = (torque * i0 * eff_diff * eff_cpling * gear / r - m * g * mu - 0.5 * air_density * C_A * C_d * vel_current ** 2) / (rot_coef * m)
-	vel_next = vel_current + acc
-	return vel_next
-
-def torque_wheel_calc(vel_now, vel_next, gear):  # velocity unit: m/s^2
-	# Parameters
-	i0 = 4.267  # Final reduction drive ratio
-	eff_diff = 0.9  # Differential efficiency
-	eff_cpling = 0.9  # Coupling efficiency
-	m = 11800  # Empty load mass
-	r = 0.515  # Tyre radius
-	g = 9.8
-	grade = 0 / 180 * math.pi  # unit: rad
-	mu = 0.012  # Rolling resistance coefficient
-	air_density = 1.2258
-	C_A = 7.93  # Air area
-	C_d = 0.45  # Air resistance coefficient
-	rot_coef = 1.16  # Correction coefficient of rotating mass
-	
-	vel_mean = (vel_next + vel_now) / 2
-	acc = vel_next - vel_now  # m/s^2
-	F_slope_and_rolling = m * g * (np.sin(grade) + mu * np.cos(grade))
-	F_air = 0.5 * air_density * C_A * C_d * vel_mean ** 2
-	torque_I = (F_air + F_slope_and_rolling + m * acc * rot_coef) * r
-
-	return torque_I
+	if torque > 0:
+		acc = (torque * i0 * eff_diff * eff_cpling * gear / r - m * g * mu - 0.5 * air_density * C_A * C_d * vel_current ** 2) / (rot_coef * m)
+	else:
+		acc = (torque * i0 / eff_diff / eff_cpling * gear / r - m * g * mu - 0.5 * air_density * C_A * C_d * vel_current ** 2) / (rot_coef * m)
+	return vel_current + acc
 
 def torque_calc(vel_now, vel_next, gear):  # velocity unit: m/s^2
 	# Parameters
@@ -107,7 +85,8 @@ def torque_calc(vel_now, vel_next, gear):  # velocity unit: m/s^2
 	acc = vel_next - vel_now  # m/s^2
 	F_slope_and_rolling = m * g * (np.sin(grade) + mu * np.cos(grade))
 	F_air = 0.5 * air_density * C_A * C_d * vel_mean ** 2
-	torque = (F_air + F_slope_and_rolling + m * acc * rot_coef) * r / (i0 * eff_diff * eff_cpling * gear)  # Nm
+	torque = (F_air + F_slope_and_rolling + m * acc * rot_coef) * r * i0 * gear
+	torque = torque * eff_diff * eff_cpling  if torque < 0 else torque / (eff_diff * eff_cpling)  # Nm
 	motor_speed = vel_mean * i0 * gear / r  # rad/s
 
 	return (motor_speed, torque, acc)
@@ -199,7 +178,7 @@ def energy_and_motor_eff_calc(vel_seq, gear_seq, Reg_rate=Reg_rate, per_meter=Tr
 			energy += energy_temp
 			motor_eff_seq[i] = motor_eff
 			torque_seq[i] = torque
-	return energy, torque_seq, motor_eff_seq, flag
+	return energy, torque_seq, motor_eff_seq, flag, motor_speed
 
 def check_vel_tm_consistence(vel_seq, gear_opt, Tm_seq, Reg_rate=Reg_rate):
 	vel_seq /= 3.6  # m/s

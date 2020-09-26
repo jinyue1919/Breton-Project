@@ -49,10 +49,18 @@ velocity = v[idx[0]] / 3.6  # velocity : m/s
 v_km = v[idx[0]]            # v_km :km/h
 # calculate distance in 10s
 t_window = 11
+# #calculate distance in 5s
+# t_window = 6
 v_mean = np.array([velocity[i:i + 2].mean() for i in range(len(velocity) - 1)])             # v_mean : m/s
 distance = [velocity[i:i + t_window].sum() for i in range(len(velocity) - t_window + 1)]    # distance : m
 v_test = np.array([velocity[i:i+t_window]  for i in range(len(velocity) - t_window + 1)])   #  v_test : m/s 
 
+# distance_5s = [velocity[i:i + t_window].sum() for i in range(len(velocity) - t_window + 1)]    # distance : m
+# v_test_5s = np.array([velocity[i:i+t_window]  for i in range(len(velocity) - t_window + 1)])   #  v_test : m/s 
+
 #%% save data
 with open('preprocessing_data.pickle', 'wb') as f:
  	pickle.dump([v_test, distance, v_km], f)
+
+# with open('preprocessing_data_5s.pickle', 'wb') as f:
+#  	pickle.dump([v_test_5s, distance_5s, v_km], f)
