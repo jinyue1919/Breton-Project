@@ -85,11 +85,11 @@ def torque_calc(vel_now, vel_next, gear):  # velocity unit: m/s^2
 	acc = vel_next - vel_now  # m/s^2
 	F_slope_and_rolling = m * g * (np.sin(grade) + mu * np.cos(grade))
 	F_air = 0.5 * air_density * C_A * C_d * vel_mean ** 2
-	torque = (F_air + F_slope_and_rolling + m * acc * rot_coef) * r * i0 * gear
+	torque = (F_air + F_slope_and_rolling + m * acc * rot_coef) * r / (i0 * gear)
 	torque = torque * eff_diff * eff_cpling  if torque < 0 else torque / (eff_diff * eff_cpling)  # Nm
 	motor_speed = vel_mean * i0 * gear / r  # rad/s
 
-	return (motor_speed, torque, acc)
+	return motor_speed, torque, acc
 
 def distance_calc(vel_current, vel_next):
     vel_mean = (vel_current + vel_next)/2
@@ -103,9 +103,10 @@ def energy_and_motor_eff_calc(vel_seq, gear_seq, Reg_rate=Reg_rate, per_meter=Tr
 	energy = 0
 	motor_eff_seq = np.zeros(vel_seq.size - 1)
 	torque_seq = np.zeros(vel_seq.size - 1)
-	flag = 1
+	flag_motor_speed = 1
+	flag_torque = 1
 	if (vel_seq == 0).all():
-		return 0, [0], [0], 1 
+		return 0, [0], [0], 1, 1, 0
 
 	# calculate one step energy
 	if vel_seq.size == 2:
@@ -134,12 +135,14 @@ def energy_and_motor_eff_calc(vel_seq, gear_seq, Reg_rate=Reg_rate, per_meter=Tr
 		if torque >= 0:
 			if torque > Tm_max:
 				torque = Tm_max
+				flag_torque = 0
 				print(f'\noriginal torque exceeds limits, set to largest!')
 			motor_eff_seq[0] = interpolate_pos_motor_eff(motor_speed, torque)
 			energy = torque * motor_speed / motor_eff_seq[0] / s_delta if per_meter == True else torque * motor_speed / motor_eff_seq[0]
 		else:
 			if torque < Tm_min:
 				torque = Tm_min
+				flag_torque = 0
 				print(f'\noriginal torque exceeds limits, set to largest!')
 			motor_eff_seq[0] = interpolate_neg_motor_eff(motor_speed, torque)
 			energy = torque * motor_speed * motor_eff_seq[0] * Reg_rate / s_delta if per_meter == True else torque * motor_speed * motor_eff_seq[0] * Reg_rate
@@ -155,7 +158,7 @@ def energy_and_motor_eff_calc(vel_seq, gear_seq, Reg_rate=Reg_rate, per_meter=Tr
 			if motor_speed > min(transmission_speed_max, motor_pos_speeds.max()):
 				delta_speed = min(transmission_speed_max, motor_pos_speeds.max()) - motor_speed
 				motor_speed = min(transmission_speed_max, motor_pos_speeds.max())
-				flag = 0
+				flag_motor_speed = 0
 				print(f'\nmulti-step: original motor speed exceed limits, set to largest.\n'
 					f'delta motor speed: {delta_speed}\n'
 					f'acc: {vel_seq[1] - vel_seq[0]} m/s\n'
@@ -166,19 +169,21 @@ def energy_and_motor_eff_calc(vel_seq, gear_seq, Reg_rate=Reg_rate, per_meter=Tr
 			if torque >= 0:
 				if torque > Tm_max:
 					torque = Tm_max
+					flag_torque = 0
 					print(f'\noriginal torque exceeds limits, set to largest!')
 				motor_eff = interpolate_pos_motor_eff(motor_speed, torque)
 				energy_temp = torque * motor_speed / motor_eff / s_delta if per_meter == True else torque * motor_speed / motor_eff
 			else:
 				if torque < Tm_min:
 					torque = Tm_min
+					flag_torque = 0
 				motor_eff = interpolate_neg_motor_eff(motor_speed, torque)
 				energy_temp = torque * motor_speed * motor_eff * Reg_rate / s_delta if per_meter == True else torque * motor_speed * motor_eff * Reg_rate
 				torque *= Reg_rate
 			energy += energy_temp
 			motor_eff_seq[i] = motor_eff
 			torque_seq[i] = torque
-	return energy, torque_seq, motor_eff_seq, flag, motor_speed
+	return energy, torque_seq, motor_eff_seq, flag_motor_speed, flag_torque, motor_speed
 
 def check_vel_tm_consistence(vel_seq, gear_opt, Tm_seq, Reg_rate=Reg_rate):
 	vel_seq /= 3.6  # m/s
