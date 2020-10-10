@@ -69,7 +69,7 @@ def energy_opt_v1(gears_in_use, gear_ctl, vel_current, vel_pred, gear_seq=None, 
 					vel_last = vel_mat[t - 1, last_state]
 					s_delta = (vel_last + vel_now) / 2 * t_delta
 					# TODO: Add transmission map. Use the original gear sequence tempe
-					(motor_speed, torque, acc) = torque_calc(vel_last, vel_now, gear=gear_current)
+					(motor_speed, torque, acc) = motor_torque_calc(vel_last, vel_now, gear=gear_current)
 					
 					if motor_speed > min(transmission_speed_max, motor_pos_speeds.max(), motor_neg_speeds.max()) or acc > max_acc or acc < max_dec:
 						power = np.inf
@@ -120,7 +120,7 @@ def energy_opt_v1(gears_in_use, gear_ctl, vel_current, vel_pred, gear_seq=None, 
 					for state_now in range(vel_num_per_second):
 						vel_now = vel_mat[t, state_now]
 						s_delta = (vel_now + vel_next) / 2 * t_delta  # distance between two timestep -> for calculating cost (w/m)
-						(motor_speed, torque, acc) = torque_calc(vel_now, vel_next, gear=gear)
+						(motor_speed, torque, acc) = motor_torque_calc(vel_now, vel_next, gear=gear)
 						# check if motor speed is output limits
 						sys_mode_temp = 1
 						if motor_speed > min(transmission_speed_max, motor_pos_speeds.max()) or acc > max_acc or acc < max_dec:
@@ -185,7 +185,7 @@ def energy_opt_v1(gears_in_use, gear_ctl, vel_current, vel_pred, gear_seq=None, 
 				for i in range(len(gears_in_use)):
 					bgn = np.mod(state_count, vel_num_per_second) * vel_num_per_second + delta
 					end = bgn + vel_num_per_second
-					if Sys_mode[t, state_count] == 1:
+					if Sys_mode[t, stamotor_torque_calc= 1:
 						idx = np.argmin(Jcost[0, bgn:end] + Pb[t, state_count]) + bgn
 						cost = np.amin(Jcost[0, bgn:end] + Pb[t, state_count])
 					elif Sys_mode[t,state_count] == 0:

@@ -59,14 +59,17 @@ def vel_preprocessing(vel_current, vel_pred, max_acc=2, max_dec=-2, t_delta=1):
 			vel_pred[i] = max(vel_pred[i - 1] + max_dec * t_delta, min(vel_pred[i - 1] + max_acc * t_delta, v))	
 	return vel_pred
 
-def vel_calc(torque, vel_current, gear):
+def vel_calc(torque, vel_current, gear, Reg_rate=Reg_rate):
+	'''
+		torque: motor
+	'''
 	if torque > 0:
 		acc = (torque * i0 * eff_diff * eff_cpling * gear / r - m * g * mu - 0.5 * air_density * C_A * C_d * vel_current ** 2) / (rot_coef * m)
 	else:
-		acc = (torque * i0 / eff_diff / eff_cpling * gear / r - m * g * mu - 0.5 * air_density * C_A * C_d * vel_current ** 2) / (rot_coef * m)
+		acc = (torque * i0 / eff_diff / eff_cpling * gear / r / Reg_rate - m * g * mu - 0.5 * air_density * C_A * C_d * vel_current ** 2) / (rot_coef * m)
 	return vel_current + acc
 
-def torque_calc(vel_now, vel_next, gear):  # velocity unit: m/s^2
+def motor_torque_calc(vel_now, vel_next, gear):  # velocity unit: m/s^2
 	# Parameters
 	i0 = 4.267  # Final reduction drive ratio
 	eff_diff = 0.9  # Differential efficiency
@@ -85,8 +88,8 @@ def torque_calc(vel_now, vel_next, gear):  # velocity unit: m/s^2
 	acc = vel_next - vel_now  # m/s^2
 	F_slope_and_rolling = m * g * (np.sin(grade) + mu * np.cos(grade))
 	F_air = 0.5 * air_density * C_A * C_d * vel_mean ** 2
-	torque = (F_air + F_slope_and_rolling + m * acc * rot_coef) * r / (i0 * gear)
-	torque = torque * eff_diff * eff_cpling  if torque < 0 else torque / (eff_diff * eff_cpling)  # Nm
+	torque = (F_air + F_slope_and_rolling + m * acc * rot_coef) * r / i0 / gear
+	torque = torque * eff_diff * eff_cpling if torque < 0 else torque / (eff_diff * eff_cpling)  # Nm
 	motor_speed = vel_mean * i0 * gear / r  # rad/s
 
 	return motor_speed, torque, acc
@@ -110,14 +113,14 @@ def energy_and_motor_eff_calc(vel_seq, gear_seq, Reg_rate=Reg_rate, per_meter=Tr
 
 	# calculate one step energy
 	if vel_seq.size == 2:
-		(motor_speed, torque, acc) = torque_calc(vel_seq[0], vel_seq[1], gear_seq[0])
+		(motor_speed, torque, acc) = motor_torque_calc(vel_seq[0], vel_seq[1], gear_seq[0])
 		s_delta = (vel_seq[0] + vel_seq[1]) / 2
 		
 		if motor_speed > min(transmission_speed_max, motor_pos_speeds.max()):#降档，print从*降到*、车速、加速度、
 			gear_former =  gear_seq[0]
 			while motor_speed > min(transmission_speed_max, motor_pos_speeds.max()):
 				gear_seq[0] = gears_in_use[np.argwhere(gears_in_use == gear_seq[0]) + 1]
-				motor_speed, _, _ = torque_calc(vel_seq[0], vel_seq[1], gear_seq[0])
+				motor_speed, _, _ = motor_torque_calc(vel_seq[0], vel_seq[1], gear_seq[0])
 			print(f'\noriginal motor speed exceed limits, change gear {gear_former} to {gear_seq[0]}\n'
 				  f'velocity: {vel_seq[0], vel_seq[1]}\n'
 				  f'acc: {vel_seq[1] - vel_seq[0]} m/s\n')
@@ -154,7 +157,7 @@ def energy_and_motor_eff_calc(vel_seq, gear_seq, Reg_rate=Reg_rate, per_meter=Tr
 			vel_now = vel_seq[i]
 			vel_next = vel_seq[i + 1]
 			s_delta = (vel_now + vel_next) / 2
-			(motor_speed, torque, acc) = torque_calc(vel_now, vel_next, gear_seq[i])
+			(motor_speed, torque, acc) = motor_torque_calc(vel_now, vel_next, gear_seq[i])
 			if motor_speed > min(transmission_speed_max, motor_pos_speeds.max()):
 				delta_speed = min(transmission_speed_max, motor_pos_speeds.max()) - motor_speed
 				motor_speed = min(transmission_speed_max, motor_pos_speeds.max())
@@ -191,7 +194,7 @@ def check_vel_tm_consistence(vel_seq, gear_opt, Tm_seq, Reg_rate=Reg_rate):
 	for i in range(vel_seq.size-1):
 		vel_now = vel_seq[i]
 		vel_next = vel_seq[i+1]
-		(motor_speed, torque, acc) = torque_calc(vel_now, vel_next, gear_opt[i])
+		(motor_speed, torque, acc) = motor_torque_calc(vel_now, vel_next, gear_opt[i])
 		torque = torque * Reg_rate if torque < 0 else torque
 		if np.isclose(torque, Tm_seq[i]):
 			flag[i] = 1

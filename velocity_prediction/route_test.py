@@ -172,7 +172,7 @@ for i in progressbar.progressbar(range(n_steps_in, v.size - n_steps_out)):
 		vel_next = v[i]			 # vel_next:  km/h
 		gear_next = gears_in_use[int(g[i] - 1)]
 
-		_, torque, _ = torque_calc(vel_current / 3.6 ,vel_next / 3.6, gear_next)	
+		_, torque, _ = motor_torque_calc(vel_current / 3.6 ,vel_next / 3.6, gear_next)	
 
 		if vel_only == True:
 			vel_seq = data[i - n_steps_in:i + n_steps_out].copy()  # use copy of data to avoid changes vel_seq: km/h
@@ -186,7 +186,7 @@ for i in progressbar.progressbar(range(n_steps_in, v.size - n_steps_out)):
 		vel_next = v[i]
 		gear_next = gears_in_use[int(g[i] - 1)]
 		
-		_, torque, _ = torque_calc(vel_current / 3.6 ,vel_next / 3.6, gear_next)	
+		_, torque, _ = motor_torque_calc(vel_current / 3.6 ,vel_next / 3.6, gear_next)	
 
 		if vel_only == True:
 			vel_seq = data[i - n_steps_in:i + n_steps_out].copy()

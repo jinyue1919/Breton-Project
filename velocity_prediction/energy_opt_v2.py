@@ -139,7 +139,7 @@ def energy_opt_v2(vel_current, vel_pred, gear_pre, tm_now=None, gear_pre_duratio
 	if gear_pre_duration < 2:
 		# prevent switch gears too constantly, next step gear is the same as now
 		gr = gear_pre
-		motor_speed, torque, acc = torque_calc(vel_now, vel_next, gears_in_use[int(gr - 1)])
+		motor_speed, torque, acc = motor_torque_calc(vel_now, vel_next, gears_in_use[int(gr - 1)])
 		Tm_max = min(interpolate_pos_torque(motor_speed), transmission_torque_max)
 		Tm_min = max(interpolate_neg_torque(motor_speed), -transmission_torque_max)
 		torque *= Reg_rate if torque < 0 else torque
@@ -161,7 +161,7 @@ def energy_opt_v2(vel_current, vel_pred, gear_pre, tm_now=None, gear_pre_duratio
 		# 	motor_speed, torque, acc = torque_calc(vel_now, vel_next, gears_in_use[int(gr - 1)])
 		for count, gr in enumerate(gears_in_use):
 			gr_temp[count] = gr
-			motor_speed, torque, acc = torque_calc(vel_now, vel_next, gr)
+			motor_speed, torque, acc = motor_torque_calc(vel_now, vel_next, gr)
 
 			if motor_speed > min(transmission_speed_max, motor_pos_speeds.max()):
 				# next step torque is the same as now
@@ -214,6 +214,6 @@ if __name__ == '__main__':
 	vel_current = 25 / 3.6
 	vel_pred = np.array([26,28,25,26,27,29,30,31.2,32.1,33.7])  / 3.6
 	gear_pre = 7  # 1-9
-	_, tm_now, _ = torque_calc(vel_current, vel_current, gears_in_use[int(gear_pre - 1)])
+	_, tm_now, _ = motor_torque_calc(vel_current, vel_current, gears_in_use[int(gear_pre - 1)])
 	vel_opt, vel_min, vel_max, Tm_cur, gear_cur, motor_eff_cur, flag = energy_opt_v2(vel_current, vel_pred, gear_pre)
 	
